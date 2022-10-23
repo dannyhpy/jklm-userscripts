@@ -4,7 +4,7 @@
 // @match       https://jklm.fun/*
 // @run-at      document-start
 // @grant       GM_addStyle
-// @version     1.0
+// @version     1.1
 // @author      Danny Hpy
 // @description Custom JKLM.FUN Chat
 // ==/UserScript==
@@ -36,6 +36,7 @@ const authorTemplate = createTemplate(`
     <div class="right-container">
       <div class="name-and-datetime-container">
         <b class="name"></b>
+        <div class="badge-container"></div>
         <span class="datetime"></span>
       </div>
 
@@ -62,6 +63,10 @@ const authorStyle = `
     border-radius: 50%;
   }
 
+  .customChat.author.banned .left-container .picture {
+    border-color: red;
+  }
+
   .customChat.author .left-container .service {
     position: relative;
     top: -1rem;
@@ -70,6 +75,10 @@ const authorStyle = `
     height: 1rem;
     border: 0.125rem solid white;
     border-radius: 50%;
+  }
+
+  .customChat.author.banned .left-container .service {
+    border-color: red;
   }
 
   .customChat.author .right-container {
@@ -84,13 +93,36 @@ const authorStyle = `
   }
 
   .customChat.author .right-container .name-and-datetime-container .name {
-    flex: 1;
     color: white;
+    margin-right: 0.5rem;
+  }
+
+  .customChat.author.banned .right-container .name-and-datetime-container .name {
+    color: red;
+  }
+
+  .customChat.author.banned .right-container .name-and-datetime-container .name:after {
+    content: ' (banned)';
+    font-size: 0.5rem;
+  }
+
+  .customChat.author .right-container .name-and-datetime-container .badge-container .badge {
+    border: 0.125rem solid white;
+    border-radius: 50%;
+  }
+
+  .customChat.author.banned .right-container .name-and-datetime-container .badge-container {
+    display: none;
   }
 
   .customChat.author .right-container .name-and-datetime-container .datetime {
+    flex: 1;
     text-align: right;
     color: gray;
+  }
+
+  .customChat.author.banned .messages {
+    display: none;
   }
 
   .customChat.author .messages .message .content {
@@ -149,6 +181,7 @@ async function customChatCallback (profile, message) {
 
   if (lastAuthorPeerId !== profile.peerId) {
     authorFragment = authorTemplate.content.cloneNode(true)
+    authorFragment.querySelector('.author').dataset.peerId = profile.peerId
     const picture = await getPeerPicture(profile.peerId)
     authorFragment.querySelector('.picture').src = picture ?? '/images/auth/guest.png'
     if (profile.auth != null) {
@@ -157,20 +190,32 @@ async function customChatCallback (profile, message) {
       serviceEl.src = `/images/auth/${profile.auth.service}.png`
     }
     authorFragment.querySelector('.name').textContent = profile.nickname
+    authorFragment.querySelector('.name').onclick = authorFragment.querySelector('.picture').onclick = () => {
+      showUserProfile(profile.peerId)
+      return false;
+    }
+    const badgeContainerEl = authorFragment.querySelector('.badge-container')
+    for (const role of profile.roles) {
+      const emoji = badgesByRole[role].icon
+      const badgeEl = document.createElement('span')
+      badgeEl.classList.add('badge')
+      badgeEl.textContent = emoji
+      badgeContainerEl.appendChild(badgeEl)
+    }
     const now = new Date()
     const toTwoDigits = i => i < 10 ? `0${i}` : i.toString()
     authorFragment.querySelector('.datetime').textContent = `${toTwoDigits(now.getHours())}:${toTwoDigits(now.getMinutes())}`
   }
 
-  if (lastMessageContent !== message) {
+  if (lastAuthorPeerId === profile.peerId && lastMessageContent === message) {
+    lastMessageEl.querySelector('.repetitionCount').textContent = `(x${++repetitionCount + 1})`
+  } else {
     messageFragment = messageTemplate.content.cloneNode(true)
     messageFragment.querySelector('.content').textContent = message
     lastMessageEl = messageFragment.querySelector('.message')
     lastMessageContent = message
     repetitionCount = 0
     ;(authorFragment ?? lastAuthorEl).querySelector('.messages').appendChild(messageFragment)
-  } else {
-    lastMessageEl.querySelector('.repetitionCount').textContent = `(x${++repetitionCount + 1})`
   }
 
   const chatLog = document.querySelector('.chat > .log')
@@ -196,6 +241,24 @@ async function main () {
       defaultChatCallback(...arguments)
     }
   }
+
+  socket.on('userBanned', async function onPeerBan ({ peerId }) {
+    const chatLog = document.querySelector('.chat > .log')
+    const elements = chatLog.querySelectorAll(`.author[data-peer-id="${peerId}"]`)
+    for (const el of elements) {
+      el.classList.add('banned')
+    }
+  })
+
+  socket.on('chatterAdded', async function onPeerJoin () {
+    lastAuthorPeerId = null
+    lastMessageContent = null
+  })
+
+  socket.on('chatterRemoved', async function onPeerLeave () {
+    lastAuthorPeerId = null
+    lastMessageContent = null
+  })
 }
 
 if (location.pathname.length === 5) {
