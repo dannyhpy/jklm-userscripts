@@ -4,7 +4,7 @@
 // @match       https://jklm.fun/*
 // @run-at      document-start
 // @grant       GM_addStyle
-// @version     1.1
+// @version     1.2
 // @author      Danny Hpy
 // @description Custom JKLM.FUN Chat
 // ==/UserScript==
@@ -63,6 +63,14 @@ const authorStyle = `
     border-radius: 50%;
   }
 
+  .customChat.author.muted .left-container .picture, .customChat.author.banned .left-container .picture {
+    filter: blur(0.25rem);
+  }
+
+  .customChat.author.muted .left-container .picture {
+    border-color: gray;
+  }
+
   .customChat.author.banned .left-container .picture {
     border-color: red;
   }
@@ -75,6 +83,10 @@ const authorStyle = `
     height: 1rem;
     border: 0.125rem solid white;
     border-radius: 50%;
+  }
+
+  .customChat.author.muted .left-container .service {
+    border-color: gray;
   }
 
   .customChat.author.banned .left-container .service {
@@ -93,12 +105,21 @@ const authorStyle = `
   }
 
   .customChat.author .right-container .name-and-datetime-container .name {
+    flex: 1;
     color: white;
-    margin-right: 0.5rem;
+  }
+
+  .customChat.author.muted .right-container .name-and-datetime-container .name {
+    color: gray;
   }
 
   .customChat.author.banned .right-container .name-and-datetime-container .name {
     color: red;
+  }
+
+  .customChat.author.muted .right-container .name-and-datetime-container .name:after {
+    content: ' (muted)';
+    font-size: 0.5rem;
   }
 
   .customChat.author.banned .right-container .name-and-datetime-container .name:after {
@@ -106,19 +127,14 @@ const authorStyle = `
     font-size: 0.5rem;
   }
 
-  .customChat.author .right-container .name-and-datetime-container .badge-container .badge {
-    border: 0.125rem solid white;
-    border-radius: 50%;
-  }
-
   .customChat.author.banned .right-container .name-and-datetime-container .badge-container {
     display: none;
   }
 
   .customChat.author .right-container .name-and-datetime-container .datetime {
-    flex: 1;
     text-align: right;
     color: gray;
+    margin-left: 0.25rem;
   }
 
   .customChat.author.banned .messages {
@@ -154,17 +170,23 @@ let repetitionCount = 0
 
 function getPeerPicture (peerId) {
   return new Promise((resolve, reject) => {
-    if (pictureURLMap.has(peerId)) return resolve(pictureURLMap.get(peerId))
+    if (pictureURLMap.has(peerId)) {
+      const [pictureURL, updatedAt] = pictureURLMap.get(peerId)
+      if (Date.now() > (updatedAt + 300 * 1_000)) {
+        pictureURLMap.delete(peerId)
+      }
+      return resolve(pictureURL)
+    }
 
     socket.emit('getChatterProfile', peerId, async function (profile) {
       if (profile.picture == null) {
-        pictureURLMap.set(peerId, null)
+        pictureURLMap.set(peerId, [null, Date.now()])
         return resolve(null)
       }
       const res = await fetch(`data:image/webp;base64,${profile.picture}`)
       const blob = await res.blob()
       const blobURL = URL.createObjectURL(blob)
-      pictureURLMap.set(peerId, blobURL)
+      pictureURLMap.set(peerId, [blobURL, Date.now()])
       return resolve(blobURL)
     })
   })
@@ -226,7 +248,10 @@ async function customChatCallback (profile, message) {
     chatLog.appendChild(authorFragment)
   }
 
-  chatLog.scrollTo(0, chatLog.scrollHeight)
+  const shouldAutoScroll = chatLog.scrollTop > chatLog.scrollHeight - 1.25 * chatLog.clientHeight
+  if (shouldAutoScroll) {
+    chatLog.scrollTo(0, chatLog.scrollHeight)
+  }
 }
 
 async function main () {
