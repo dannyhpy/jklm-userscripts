@@ -4,7 +4,7 @@
 // @match       https://jklm.fun/*
 // @run-at      document-start
 // @grant       GM_addStyle
-// @version     1.2
+// @version     1.3
 // @author      Danny Hpy
 // @description Custom JKLM.FUN Chat
 // ==/UserScript==
@@ -48,6 +48,16 @@ const authorTemplate = createTemplate(`
 const authorStyle = `
   .customChat.author {
     display: flex;
+    padding-left: 0.25rem;
+  }
+
+  .customChat.author.highlight {
+    padding-left: 0.125rem;
+    border-left: 0.125rem solid rgb(188 116 225);
+  }
+
+  .customChat.author:hover {
+    background: #333;
   }
 
   .customChat.author .left-container {
@@ -78,10 +88,9 @@ const authorStyle = `
   .customChat.author .left-container .service {
     position: relative;
     top: -1rem;
-    left: -0.25rem;
+    left: 1.25rem;
     width: 1rem;
     height: 1rem;
-    border: 0.125rem solid white;
     border-radius: 50%;
   }
 
@@ -204,6 +213,15 @@ async function customChatCallback (profile, message) {
   if (lastAuthorPeerId !== profile.peerId) {
     authorFragment = authorTemplate.content.cloneNode(true)
     authorFragment.querySelector('.author').dataset.peerId = profile.peerId
+    if (typeof mutedPeerIds !== 'undefined') {
+      if (mutedPeerIds.includes(profile.peerId)) {
+        authorFragment.querySelector('.author').classList.add('muted')
+      }
+    }
+    if (profile.nickname.match(/\[bot\]$/i)) {
+      // Currently highlight bot messages
+      authorFragment.querySelector('.author').classList.add('highlight')
+    }
     const picture = await getPeerPicture(profile.peerId)
     authorFragment.querySelector('.picture').src = picture ?? '/images/auth/guest.png'
     if (profile.auth != null) {
@@ -213,7 +231,9 @@ async function customChatCallback (profile, message) {
     }
     authorFragment.querySelector('.name').textContent = profile.nickname
     authorFragment.querySelector('.name').onclick = authorFragment.querySelector('.picture').onclick = () => {
-      showUserProfile(profile.peerId)
+      if (typeof showUserProfile !== 'undefined') {
+        showUserProfile(profile.peerId)
+      }
       return false;
     }
     const badgeContainerEl = authorFragment.querySelector('.badge-container')
@@ -241,6 +261,7 @@ async function customChatCallback (profile, message) {
   }
 
   const chatLog = document.querySelector('.chat > .log')
+  const shouldAutoScroll = chatLog.scrollTop > chatLog.scrollHeight - 1.25 * chatLog.clientHeight
 
   if (lastAuthorPeerId !== profile.peerId) {
     lastAuthorEl = authorFragment.querySelector('.author')
@@ -248,7 +269,6 @@ async function customChatCallback (profile, message) {
     chatLog.appendChild(authorFragment)
   }
 
-  const shouldAutoScroll = chatLog.scrollTop > chatLog.scrollHeight - 1.25 * chatLog.clientHeight
   if (shouldAutoScroll) {
     chatLog.scrollTo(0, chatLog.scrollHeight)
   }
